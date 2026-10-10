@@ -7,6 +7,8 @@ graph keeps working in Logseq itself.
 It only acts on files inside the graph's `pages/` and `journals/` folders. Other markdown
 files are not touched.
 
+This is an independent, community-driven plugin and is not officially affiliated with Logseq or LazyVim.
+
 ## Requirements
 
 - Neovim 0.10+
