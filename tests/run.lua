@@ -437,6 +437,15 @@ local ok, err = xpcall(function()
   check("collect: page title and breadcrumb", open[2].page == "Alpha" and open[2].crumb == "Project", vim.inspect(open[2]))
   check("collect: with closed", bodies(tasks.collect({ closed = true })) == "second|first|insurance|older|tabbed|finished|nope")
   check("collect: one file", bodies(tasks.collect({ file = ta, closed = true })) == "second|first|finished")
+  local jt = idx.by_file(root .. "/journals/2026_07_30.md").title
+  check("filter by page: tasks written on a journal", bodies(tasks.collect({ page = jt, closed = true })) == "tabbed|nope", bodies(tasks.collect({ page = jt, closed = true })))
+  check("journals stay out of the page list", not vim.tbl_contains(vim.tbl_map(function(p)
+    return p.title
+  end, tasks.pages_with_tasks()), jt))
+  local row = vim.tbl_map(function(piece)
+    return piece[1]
+  end, tasks.row({ kw = "TODO", page = "P", body = "the task", crumb = "#Work › DONE long parent › plain", closed = false }))
+  check("row: task before its parents, keywords dropped", row[#row - 1] == "the task" and row[#row] == "   #Work › long parent › plain", vim.inspect(row))
 
   vim.cmd.edit(root .. "/pages/database.md")
   set({ "title:: database", "", "- TODO unsaved" })

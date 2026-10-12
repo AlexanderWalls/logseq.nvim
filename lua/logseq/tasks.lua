@@ -319,7 +319,8 @@ function M.collect(o)
   if want_page or o.due_within then
     local dates = require("logseq.dates")
     items = vim.tbl_filter(function(t)
-      if want_page and not t.refset[want_page] then
+      -- written on that page, or mentioning it
+      if want_page and not (t.refset[want_page] or t.page:lower() == want_page) then
         return false
       end
       return not o.due_within or (t.due ~= nil and dates.days_until(t.due) <= o.due_within)
@@ -428,6 +429,31 @@ function M.chip(t, now)
   return word .. " " .. day, hl
 end
 
+--- One picker line for a collected task, as { text, highlight } pieces. The task comes
+--- first and the bullets it sits under last, so a long parent never hides the task.
+function M.row(t)
+  local icon = opts().icons[t.kw]
+  local r = {
+    { ((icon and icon ~= "") and icon or t.kw) .. " ", HL[t.kw] },
+    { t.page, "LogseqBacklinkPage" },
+    { "  " },
+  }
+  local chip, chip_hl = M.chip(t)
+  if chip then
+    r[#r + 1] = { chip .. "  ", chip_hl }
+  end
+  r[#r + 1] = { t.body, t.closed and "LogseqDoneText" or nil }
+  if t.crumb then
+    local steps = {}
+    for _, step in ipairs(vim.split(t.crumb, " › ", { plain = true })) do
+      local kw, rest = step:match("^(%u+) (.+)$")
+      steps[#steps + 1] = (kw and HL[kw]) and rest or step
+    end
+    r[#r + 1] = { "   " .. table.concat(steps, " › "), "LogseqBacklinkCrumb" }
+  end
+  return r
+end
+
 --- Picker over tasks. `o.page`: only tasks belonging to that page; `o.due`: only tasks
 --- overdue or due soon; `o.closed`: include closed ones; `o.file`: one file only.
 function M.picker(o)
@@ -438,7 +464,6 @@ function M.picker(o)
     local e = idx.resolve(state.page)
     state.page = e and e.title or state.page
   end
-  local icons = opts().icons
   local days = opts().tasks.due_days
   local function title()
     local t = state.page and ("Tasks: " .. state.page) or "Tasks"
@@ -483,22 +508,7 @@ function M.picker(o)
       return items
     end,
     format = function(item)
-      local t = item.task
-      local icon = icons[t.kw]
-      local r = {
-        { ((icon and icon ~= "") and icon or t.kw) .. " ", HL[t.kw] },
-        { t.page, "LogseqBacklinkPage" },
-        { "  " },
-      }
-      if t.crumb then
-        r[#r + 1] = { t.crumb .. " › ", "LogseqBacklinkCrumb" }
-      end
-      local chip, chip_hl = M.chip(t)
-      if chip then
-        r[#r + 1] = { chip .. "  ", chip_hl }
-      end
-      r[#r + 1] = { t.body, t.closed and "LogseqDoneText" or nil }
-      return r
+      return M.row(item.task)
     end,
     preview = "file",
     actions = {
