@@ -50,13 +50,22 @@ function M.planning(lines, lnum)
   return out
 end
 
---- highlight group for a date of an open task
-local function date_hl(date, closed)
+--- How pressing a date of a task is: a level and its highlight group. `kind` is "deadline"
+--- or "scheduled"; only a deadline can be overdue, a scheduled date that has passed counts
+--- as today's work.
+function M.urgency(date, kind, closed, now)
   if closed then
-    return "LogseqPlanned"
+    return "closed", "LogseqPlanned"
   end
-  local today = os.date("%Y%m%d")
-  return date < today and "LogseqOverdue" or date == today and "LogseqDue" or "LogseqPlanned"
+  local days = require("logseq.dates").days_until(date, now)
+  if days < 0 and kind == "deadline" then
+    return "overdue", "LogseqOverdue"
+  elseif days <= 0 then
+    return "today", "LogseqDue"
+  elseif days <= opts().tasks.due_days then
+    return "soon", "LogseqSoon"
+  end
+  return "later", "LogseqLater"
 end
 
 function M.refresh(buf)
@@ -69,11 +78,12 @@ function M.refresh(buf)
   for i, line in ipairs(lines) do
     local pre, kw = M.parse(line)
     if kw then
-      for _, p in pairs(M.planning(lines, i)) do
+      for kind, p in pairs(M.planning(lines, i)) do
         local l = lines[p.lnum]
+        local _, hl = M.urgency(p.date, kind, CLOSED[kw])
         vim.api.nvim_buf_set_extmark(buf, ns, p.lnum - 1, #l:match("^%s*"), {
           end_col = #l,
-          hl_group = date_hl(p.date, CLOSED[kw]),
+          hl_group = hl,
         })
       end
       local icon = icons[kw]
@@ -391,23 +401,31 @@ function M.set_state(item)
   return true
 end
 
---- Short date label for a collected task: text and highlight group, or nil.
+--- Short date label for a collected task: text and highlight group, or nil. Shows the
+--- deadline once it is due, otherwise the earlier of the two dates.
 function M.chip(t, now)
   if not t.due then
     return nil
   end
   local dates = require("logseq.dates")
-  local days = dates.days_until(t.due, now)
-  local day = os.date("%d %b", dates.key_time(t.due)):gsub("^0", "")
-  local word = t.due == t.deadline and "due" or "sched"
-  if t.closed then
-    return word .. " " .. day, "LogseqPlanned"
-  elseif days < 0 then
-    return ("overdue %dd"):format(-days), "LogseqOverdue"
-  elseif days == 0 then
-    return word .. " today", "LogseqDue"
+  local date, kind = t.due, t.due == t.deadline and "deadline" or "scheduled"
+  if t.deadline and dates.days_until(t.deadline, now) <= 0 then
+    date, kind = t.deadline, "deadline"
   end
-  return word .. " " .. day, "LogseqPlanned"
+  local days = dates.days_until(date, now)
+  local word = kind == "deadline" and "due" or "sched"
+  local level, hl = M.urgency(date, kind, t.closed, now)
+  if level == "overdue" then
+    return ("overdue %dd"):format(-days), hl
+  elseif level == "today" then
+    return days == 0 and (word .. " today") or ("%s %dd ago"):format(word, -days), hl
+  elseif level == "soon" then
+    -- a day name is unambiguous for the coming six days only
+    local when = days == 1 and "tomorrow" or days < 7 and os.date("%a", dates.key_time(date)) or ("in %dd"):format(days)
+    return word .. " " .. when, hl
+  end
+  local day = os.date("%d %b", dates.key_time(date)):gsub("^0", "")
+  return word .. " " .. day, hl
 end
 
 --- Picker over tasks. `o.page`: only tasks belonging to that page; `o.due`: only tasks

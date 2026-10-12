@@ -33,7 +33,7 @@ M.defaults = {
   tasks = {
     -- keys inside the task picker; false leaves one unbound
     keys = { cycle = "<c-x>", toggle_closed = "<c-o>", filter_page = "<c-l>", filter_due = "<c-e>" },
-    due_days = 7, -- window of the "due soon" filter
+    due_days = 7, -- window of the "due soon" filter, and of the dates coloured as soon
   },
   backlinks = {
     enabled = true, -- show "Linked References" under the page

@@ -527,7 +527,21 @@ local ok, err = xpcall(function()
     local t = os.date("*t")
     return os.time({ year = t.year, month = t.month, day = t.day + offset, hour = 12 })
   end
-  set({ "- TODO late", "  DEADLINE: " .. dates.stamp(d(-2)), "- TODO now", "  DEADLINE: " .. dates.stamp(d(0)), "- TODO later", "  SCHEDULED: " .. dates.stamp(d(5)), "- DONE old", "  DEADLINE: " .. dates.stamp(d(-9)), "- TODO undated" })
+  set({
+    "- TODO late",
+    "  DEADLINE: " .. dates.stamp(d(-2)),
+    "- TODO now",
+    "  DEADLINE: " .. dates.stamp(d(0)),
+    "- TODO later",
+    "  SCHEDULED: " .. dates.stamp(d(5)),
+    "- TODO started",
+    "  SCHEDULED: " .. dates.stamp(d(-3)),
+    "- TODO far",
+    "  DEADLINE: " .. dates.stamp(d(30)),
+    "- DONE old",
+    "  DEADLINE: " .. dates.stamp(d(-9)),
+    "- TODO undated",
+  })
   tasks.refresh(0)
   local groups = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(0, vim.api.nvim_create_namespace("logseq_tasks"), 0, -1, { details = true })) do
@@ -535,14 +549,33 @@ local ok, err = xpcall(function()
       groups[#groups + 1] = m[4].hl_group
     end
   end
-  check("date highlights", table.concat(groups, ",") == "LogseqOverdue,LogseqDue,LogseqPlanned,LogseqPlanned", table.concat(groups, ","))
+  check("date highlights", table.concat(groups, ",") == "LogseqOverdue,LogseqDue,LogseqSoon,LogseqDue,LogseqLater,LogseqPlanned", table.concat(groups, ","))
   local dated = tasks.collect({ file = td, closed = true })
-  check("collect: dated first, earliest first", bodies(dated) == "late|now|later|undated|old", bodies(dated))
-  check("chip overdue", tasks.chip(dated[1]) == "overdue 2d")
-  check("chip today", tasks.chip(dated[2]) == "due today")
-  check("chip scheduled", (tasks.chip(dated[3]) or ""):match("^sched %d+ %a+$") ~= nil, tasks.chip(dated[3]))
-  check("chip none", tasks.chip(dated[4]) == nil)
-  check("chip closed is not overdue", select(2, tasks.chip(dated[5])) == "LogseqPlanned")
+  check("collect: dated first, earliest first", bodies(dated) == "started|late|now|later|far|undated|old", bodies(dated))
+  local function chip(i)
+    local text, hl = tasks.chip(dated[i])
+    return (text or "nil") .. "/" .. (hl or "nil")
+  end
+  check("chip past scheduled is not overdue", chip(1) == "sched 3d ago/LogseqDue", chip(1))
+  check("chip overdue", chip(2) == "overdue 2d/LogseqOverdue", chip(2))
+  check("chip today", chip(3) == "due today/LogseqDue", chip(3))
+  check("chip soon", chip(4) == "sched " .. os.date("%a", d(5)) .. "/LogseqSoon", chip(4))
+  check("chip later", chip(5):match("^due %d+ %a+/LogseqLater$") ~= nil, chip(5))
+  check("chip none", tasks.chip(dated[6]) == nil)
+  check("chip closed is not overdue", select(2, tasks.chip(dated[7])) == "LogseqPlanned")
+  local mon = os.time({ year = 2026, month = 10, day = 12, hour = 12 }) -- a Monday
+  local function at(deadline, scheduled)
+    local due = (deadline and scheduled) and math.min(deadline, scheduled) .. "" or deadline or scheduled
+    local text, hl = tasks.chip({ deadline = deadline, scheduled = scheduled, due = due }, mon)
+    return text .. "/" .. hl
+  end
+  check("chip tomorrow", at("20261013") == "due tomorrow/LogseqSoon", at("20261013"))
+  check("chip day name", at(nil, "20261018") == "sched Sun/LogseqSoon", at(nil, "20261018"))
+  check("chip window edge", at(nil, "20261019") == "sched in 7d/LogseqSoon", at(nil, "20261019"))
+  check("chip past the window", at("20261020") == "due 20 Oct/LogseqLater", at("20261020"))
+  check("chip scheduled today", at(nil, "20261012") == "sched today/LogseqDue", at(nil, "20261012"))
+  check("chip missed deadline beats an older scheduled date", at("20261011", "20261008") == "overdue 1d/LogseqOverdue", at("20261011", "20261008"))
+  check("chip earlier date while the deadline is ahead", at("20261030", "20261014") == "sched Wed/LogseqSoon", at("20261030", "20261014"))
   vim.cmd("edit!")
   check("date tests left the file alone", vim.deep_equal(vim.fn.readfile(td), (function()
     local w = vim.deepcopy(td_lines)

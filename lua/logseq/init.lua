@@ -112,6 +112,17 @@ local function define_hl()
   local function fg(name)
     return vim.api.nvim_get_hl(0, { name = name, link = false }).fg
   end
+  local function mix(a, b)
+    if not (a and b) then
+      return a or b
+    end
+    local out = 0
+    for shift = 16, 0, -8 do
+      local x, y = math.floor(a / 2 ^ shift) % 256, math.floor(b / 2 ^ shift) % 256
+      out = out * 256 + math.floor((x + y) / 2)
+    end
+    return out
+  end
   local function set(name, val)
     val.default = true
     vim.api.nvim_set_hl(0, name, val)
@@ -123,6 +134,9 @@ local function define_hl()
   set("LogseqDoneText", { fg = fg("Comment"), strikethrough = true })
   set("LogseqOverdue", { fg = fg("DiagnosticError"), bold = true })
   set("LogseqDue", { fg = fg("DiagnosticWarn"), bold = true })
+  set("LogseqSoon", { fg = fg("DiagnosticHint") })
+  -- halfway between the soon colour and the comment grey: quieter, but not the grey of a breadcrumb
+  set("LogseqLater", { fg = mix(fg("DiagnosticHint"), fg("Comment")) })
   set("LogseqPlanned", { fg = fg("Comment") })
   -- same colour treesitter gives `[[links]]`, so a `#tag` reads as the link it is
   set("LogseqTag", { fg = fg("@markup.link.label.markdown_inline") or fg("@markup.link.label") or fg("Special") })

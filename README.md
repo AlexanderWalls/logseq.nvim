@@ -75,7 +75,7 @@ return {
   icons = { TODO = "☐", LATER = "☐", DOING = "◐", NOW = "◐", WAITING = "⧖", DONE = "☑", CANCELLED = "✗" },
   tasks = {
     keys = { cycle = "<c-x>", toggle_closed = "<c-o>", filter_page = "<c-l>", filter_due = "<c-e>" }, -- in the task picker
-    due_days = 7, -- window of the "due soon" filter
+    due_days = 7, -- window of the "due soon" filter, and of the dates coloured as soon
   },
   backlinks = { enabled = true, width = 110 },
   buffer = { disable_diagnostics = true, disable_autoformat = true, indent = 2, wrap = true, spell = nil },
@@ -160,9 +160,20 @@ and so is `- TODO ... [[Work]]` in a journal. Three ways to use that:
 ```
 
 The prompt takes `2026-10-15`, `today`, `tomorrow`, a day name (`fri` is the next Friday),
-`+3d` or `+2w`. An empty answer removes the date. On the page the line is red when overdue
-and yellow when due today. In the task picker, dated tasks come first within each state,
-earliest first, with a `due 15 Oct` / `overdue 3d` label.
+`+3d` or `+2w`. An empty answer removes the date. In the task picker, dated tasks come first
+within each state, earliest first, with a short label. The label and the date line on the
+page share one colour, which says how soon the date is:
+
+| When | Label | Highlight group |
+| --- | --- | --- |
+| deadline has passed | `overdue 3d` | `LogseqOverdue` |
+| today, or a scheduled date that has passed | `due today`, `sched 3d ago` | `LogseqDue` |
+| within `tasks.due_days` | `due tomorrow`, `due Wed`, `sched in 7d` | `LogseqSoon` |
+| further ahead | `due 15 Nov` | `LogseqLater` |
+| task is closed | `due 15 Oct` | `LogseqPlanned` |
+
+A task with both dates shows the deadline once it is due, otherwise the earlier of the two.
+The groups are defined with `default`, so your own `:highlight` settings win.
 
 ## Notes
 
