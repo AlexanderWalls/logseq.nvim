@@ -442,10 +442,6 @@ local ok, err = xpcall(function()
   check("journals stay out of the page list", not vim.tbl_contains(vim.tbl_map(function(p)
     return p.title
   end, tasks.pages_with_tasks()), jt))
-  local row = vim.tbl_map(function(piece)
-    return piece[1]
-  end, tasks.row({ kw = "TODO", page = "P", body = "the task", crumb = "#Work › DONE long parent › plain", closed = false }))
-  check("row: task before its parents, keywords dropped", row[#row - 1] == "the task" and row[#row] == "   #Work › long parent › plain", vim.inspect(row))
 
   vim.cmd.edit(root .. "/pages/database.md")
   set({ "title:: database", "", "- TODO unsaved" })
@@ -609,6 +605,30 @@ local ok, err = xpcall(function()
   idx.invalidate()
   local refs = tasks.refs_of("a [[Job]] b #[[Medicine Festival]] (#database) ## heading x#no [[job]]")
   check("refs_of forms and aliases", table.concat(refs, "|") == "Work|Medicine Festival|database", table.concat(refs, "|"))
+  local function flat(pieces, width)
+    local text, hls = "", {}
+    for _, piece in ipairs(pieces) do
+      for _, x in ipairs(piece.resolve and piece.resolve(width) or { piece }) do
+        text = text .. x[1]
+        hls[x[1]] = x[2]
+      end
+    end
+    return text, hls
+  end
+  local body, bh = flat(tasks.body_pieces("see [[Job]] and [[Alpha|the plan]] #Work now"))
+  check("body: brackets gone, label shown, tag kept", body == "see Job and the plan #Work now", body)
+  check("body: alias coloured as its page", bh["Job"] == tasks.label_hl("Work") and bh["#Work"] == bh["Job"] and bh["see "] == nil, vim.inspect(bh))
+  local _, ch = flat(tasks.body_pieces("see [[Job]]", true))
+  check("body: closed text is not coloured", ch["Job"] == "LogseqDoneText" and ch["see "] == "LogseqDoneText")
+  check("body: cut to width", flat(tasks.body_pieces("abcdef [[Job]] tail", false, 9)) == "abcdef J…" and flat(tasks.body_pieces("abcdef", false, 6)) == "abcdef")
+  local task = { kw = "TODO", page = "Alpha", body = "the task [[Job]]", crumb = "#Medicine Festival › parent", refs = { "Medicine Festival", "Work", "Alpha" }, closed = false }
+  local row, rh = flat(tasks.row(task), 500)
+  check("row: no page column, labels only for pages the text does not name", row:match("^%S+ the task Job   #Medicine Festival  #Alpha$") ~= nil, row)
+  check("row: label colour", rh["#Alpha"] == tasks.label_hl("alpha") and rh["#Alpha"]:match("^LogseqLabel[1-6]$") ~= nil, rh["#Alpha"])
+  check("row: long task cut, labels kept", flat(tasks.row(vim.tbl_extend("force", task, { body = ("x"):rep(200) })), 22):match("^%S+ x+…   #Medicine Festival  #Work  #Alpha$") ~= nil)
+  check("label colour ignores case", tasks.label_hl("Work") == tasks.label_hl("work"))
+  local _, dh = flat(tasks.row({ kw = "DONE", page = "Alpha", body = "x", refs = { "Work" }, closed = true }), 500)
+  check("row: closed task labels are grey", dh["#Work"] == "LogseqPlanned")
   local work = tasks.collect({ page = "job" })
   check("filter by page: all four ways", bodies(work) == "under a parent|inline #Work|via page tag|on the work page|hash list #[[Work]]", bodies(work))
   check("filter by page: non-member left out", not bodies(work):find("unrelated", 1, true))

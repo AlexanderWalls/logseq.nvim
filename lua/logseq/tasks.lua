@@ -429,27 +429,77 @@ function M.chip(t, now)
   return word .. " " .. day, hl
 end
 
---- One picker line for a collected task, as { text, highlight } pieces. The task comes
---- first and the bullets it sits under last, so a long parent never hides the task.
+-- number of LogseqLabel<n> highlight groups that page labels are spread over
+M.label_count = 6
+
+--- Highlight group of a page label: the same page always gets the same one.
+function M.label_hl(name)
+  local sum = 0
+  for i = 1, #name do
+    sum = sum + name:lower():byte(i)
+  end
+  return "LogseqLabel" .. (sum % M.label_count + 1)
+end
+
+--- A task's text as { text, highlight } pieces: `[[page]]` loses its brackets and, like a
+--- `#tag`, takes the colour of that page's label. `width`: cut to that many characters.
+function M.body_pieces(text, closed, width)
+  local idx = require("logseq.index")
+  local base = closed and "LogseqDoneText" or nil
+  local out, pos = {}, 1
+  local function push(str, hl)
+    if str ~= "" then
+      out[#out + 1] = { str, hl }
+    end
+  end
+  for _, r in ipairs(require("logseq.links").scan(text)) do
+    push(text:sub(pos, r.s - 1), base)
+    local e = idx.resolve(r.name)
+    local shown = r.kind == "tag" and ("#" .. r.name) or (r.label and vim.trim(r.label:sub(2)) or r.name)
+    push(shown, base or M.label_hl(e and e.title or r.name))
+    pos = r.e + 1
+  end
+  push(text:sub(pos), base)
+  if not width then
+    return out
+  end
+  local cut, left = {}, math.max(width, 2) - 1 -- one cell is kept for the ellipsis
+  for i, piece in ipairs(out) do
+    local n = vim.fn.strchars(piece[1])
+    if n > left and not (n == left + 1 and i == #out) then
+      cut[#cut + 1] = { vim.fn.strcharpart(piece[1], 0, left) .. "…", piece[2] }
+      return cut
+    end
+    cut[#cut + 1] = piece
+    left = left - n
+  end
+  return cut
+end
+
+--- One picker line for a collected task, as pieces for the picker: state, date, the task,
+--- then a label for every page it belongs to that its own text does not already name. The
+--- text is a piece the picker resolves with the room that is left, so labels stay in view.
 function M.row(t)
   local icon = opts().icons[t.kw]
-  local r = {
-    { ((icon and icon ~= "") and icon or t.kw) .. " ", HL[t.kw] },
-    { t.page, "LogseqBacklinkPage" },
-    { "  " },
-  }
+  local r = { { ((icon and icon ~= "") and icon or t.kw) .. " ", HL[t.kw] } }
   local chip, chip_hl = M.chip(t)
   if chip then
     r[#r + 1] = { chip .. "  ", chip_hl }
   end
-  r[#r + 1] = { t.body, t.closed and "LogseqDoneText" or nil }
-  if t.crumb then
-    local steps = {}
-    for _, step in ipairs(vim.split(t.crumb, " › ", { plain = true })) do
-      local kw, rest = step:match("^(%u+) (.+)$")
-      steps[#steps + 1] = (kw and HL[kw]) and rest or step
+  r[#r + 1] = {
+    "",
+    resolve = function(max_width)
+      return M.body_pieces(t.body, t.closed, math.max(max_width - 2, 10))
+    end,
+  }
+  local _, named = M.refs_of(t.body)
+  local gap = "   "
+  for _, ref in ipairs(t.refs or {}) do
+    if not named[ref:lower()] then
+      r[#r + 1] = { gap }
+      r[#r + 1] = { "#" .. ref, t.closed and "LogseqPlanned" or M.label_hl(ref) }
+      gap = "  "
     end
-    r[#r + 1] = { "   " .. table.concat(steps, " › "), "LogseqBacklinkCrumb" }
   end
   return r
 end
@@ -511,6 +561,8 @@ function M.picker(o)
       return M.row(item.task)
     end,
     preview = "file",
+    -- the list cannot wrap, so it gets the full width and the preview goes underneath
+    layout = { preset = "vertical", layout = { width = 0.9 } },
     actions = {
       logseq_cycle = function(picker, item)
         if not item then

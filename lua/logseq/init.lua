@@ -138,6 +138,34 @@ local function define_hl()
   -- halfway between the soon colour and the comment grey: quieter, but not the grey of a breadcrumb
   set("LogseqLater", { fg = mix(fg("DiagnosticHint"), fg("Comment")) })
   set("LogseqPlanned", { fg = fg("Comment") })
+  -- page labels in the task picker: colours of clearly different hue, none of them a date colour
+  local function hue(c)
+    local r, g, b = math.floor(c / 65536) % 256, math.floor(c / 256) % 256, c % 256
+    local max, min = math.max(r, g, b), math.min(r, g, b)
+    if max == min then
+      return 0
+    end
+    local h = max == r and (g - b) / (max - min) % 6 or max == g and (b - r) / (max - min) + 2 or (r - g) / (max - min) + 4
+    return h * 60
+  end
+  local labels, dated = {}, {}
+  for _, name in ipairs({ "DiagnosticError", "DiagnosticWarn", "DiagnosticHint" }) do
+    dated[fg(name) or false] = true
+  end
+  for _, name in ipairs({ "Function", "Keyword", "String", "Constant", "Identifier", "Type", "Special", "PreProc", "Statement" }) do
+    local c = fg(name)
+    local ok = c ~= nil and not dated[c]
+    for _, other in ipairs(ok and labels or {}) do
+      local d = math.abs(hue(c) - hue(other))
+      ok = ok and math.min(d, 360 - d) >= 15
+    end
+    if ok then
+      labels[#labels + 1] = c
+    end
+  end
+  for i = 1, require("logseq.tasks").label_count do
+    set("LogseqLabel" .. i, { fg = labels[(i - 1) % math.max(#labels, 1) + 1] or fg("Special") })
+  end
   -- same colour treesitter gives `[[links]]`, so a `#tag` reads as the link it is
   set("LogseqTag", { fg = fg("@markup.link.label.markdown_inline") or fg("@markup.link.label") or fg("Special") })
   set("LogseqBacklinkHeader", { fg = fg("Title"), bold = true })
